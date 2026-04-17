@@ -1,0 +1,43 @@
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
+      "env": {
+        "GITHUB_TOKEN": "ghp_your_github_personal_access_token_here"
+      }
+    },
+    "jira": {
+      "command": "python",
+      "args": [
+        "/absolute/path/to/your/jira_mcp_server.py"
+      ],
+      "env": {
+        "JIRA_URL": "https://your-domain.atlassian.net",
+        "JIRA_EMAIL": "your-email@example.com",
+        "JIRA_API_TOKEN": "your_jira_api_token_here"
+      }
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/Users/yourusername/projects"
+      ]
+    },
+    "postgres": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres"
+      ],
+      "env": {
+        "POSTGRES_CONNECTION_STRING": "postgresql://user:password@localhost:5432/dbname"
+      }
+    }
+  }
+}

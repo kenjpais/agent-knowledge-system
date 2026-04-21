@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import ForeignKey, Text, DateTime, Integer, String
+from sqlalchemy import ForeignKey, Text, DateTime, Integer, SmallInteger, BigInteger, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -38,7 +38,9 @@ class PullRequest(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime)
     merged_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     files_changed: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    jira_keys: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    epic_key: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    story_key: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    task_key: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     repository: Mapped["Repository"] = relationship(back_populates="pull_requests")
     features: Mapped[list["Feature"]] = relationship(
@@ -46,25 +48,75 @@ class PullRequest(Base):
     )
 
 
-class JiraTicket(Base):
-    __tablename__ = "jira_tickets"
+# --- JIRA_DB tables ---
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    key: Mapped[str] = mapped_column(String(50), unique=True)
-    summary: Mapped[str] = mapped_column(String(500))
+class Project(Base):
+    __tablename__ = "projects"
+
+    project_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    project_key: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    ticket_type: Mapped[str] = mapped_column(String(50))
-    status: Mapped[str] = mapped_column(String(50))
-    priority: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    assignee: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    reporter: Mapped[str] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(DateTime)
-    updated_at: Mapped[datetime] = mapped_column(DateTime)
-    epic_key: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
-    features: Mapped[list["Feature"]] = relationship(
-        secondary="feature_jira_association", back_populates="jira_tickets"
+    issues: Mapped[list["Issue"]] = relationship(back_populates="project")
+
+
+class IssueType(Base):
+    __tablename__ = "issue_types"
+
+    issue_type_id: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
+    name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    hierarchy_level: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+
+    issues: Mapped[list["Issue"]] = relationship(back_populates="issue_type")
+
+
+class Issue(Base):
+    __tablename__ = "issues"
+
+    issue_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    project_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("projects.project_id"), nullable=False)
+    issue_type_id: Mapped[int] = mapped_column(SmallInteger, ForeignKey("issue_types.issue_type_id"), nullable=False)
+    parent_issue_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("issues.issue_id"), nullable=True)
+
+    key: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    summary: Mapped[str] = mapped_column(String(500), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    priority: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
+    assignee_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    reporter_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    due_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    project: Mapped["Project"] = relationship(back_populates="issues")
+    issue_type: Mapped["IssueType"] = relationship(back_populates="issues")
+    parent: Mapped[Optional["Issue"]] = relationship(back_populates="children", remote_side=[issue_id])
+    children: Mapped[list["Issue"]] = relationship(back_populates="parent")
+    outgoing_links: Mapped[list["IssueLink"]] = relationship(
+        foreign_keys="IssueLink.source_issue_id", back_populates="source_issue"
     )
+    incoming_links: Mapped[list["IssueLink"]] = relationship(
+        foreign_keys="IssueLink.target_issue_id", back_populates="target_issue"
+    )
+
+
+class IssueLink(Base):
+    __tablename__ = "issue_links"
+
+    link_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    source_issue_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("issues.issue_id"), nullable=False)
+    target_issue_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("issues.issue_id"), nullable=False)
+    link_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
+    source_issue: Mapped["Issue"] = relationship(foreign_keys=[source_issue_id], back_populates="outgoing_links")
+    target_issue: Mapped["Issue"] = relationship(foreign_keys=[target_issue_id], back_populates="incoming_links")
 
 
 class Feature(Base):
@@ -80,9 +132,6 @@ class Feature(Base):
     repository: Mapped["Repository"] = relationship(back_populates="features")
     pull_requests: Mapped[list["PullRequest"]] = relationship(
         secondary="feature_pr_association", back_populates="features"
-    )
-    jira_tickets: Mapped[list["JiraTicket"]] = relationship(
-        secondary="feature_jira_association", back_populates="features"
     )
     documents: Mapped[list["Document"]] = relationship(back_populates="feature")
 
@@ -118,10 +167,3 @@ class FeaturePRAssociation(Base):
 
     feature_id: Mapped[int] = mapped_column(ForeignKey("features.id"), primary_key=True)
     pr_id: Mapped[int] = mapped_column(ForeignKey("pull_requests.id"), primary_key=True)
-
-
-class FeatureJiraAssociation(Base):
-    __tablename__ = "feature_jira_association"
-
-    feature_id: Mapped[int] = mapped_column(ForeignKey("features.id"), primary_key=True)
-    jira_id: Mapped[int] = mapped_column(ForeignKey("jira_tickets.id"), primary_key=True)

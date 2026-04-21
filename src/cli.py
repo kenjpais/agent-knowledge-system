@@ -59,11 +59,9 @@ def ingest_github(owner: str, repo: str, limit: int):
 
 
 @cli.command()
-@click.option("--jql", help="Jira JQL query")
 @click.option("--keys", help="Comma-separated Jira issue keys")
-@click.option("--limit", default=100, help="Maximum number of issues")
-def ingest_jira(jql: str | None, keys: str | None, limit: int):
-    """Ingest data from Jira"""
+def ingest_jira(keys: str | None):
+    """Ingest Jira data from keys found in PR table, or by explicit keys."""
 
     async def run():
         db = SessionLocal()
@@ -77,18 +75,22 @@ def ingest_jira(jql: str | None, keys: str | None, limit: int):
                 jira_token=settings.jira_api_token,
             )
 
-            params: dict = {"limit": limit}
-            if jql:
-                params["jql"] = jql
-            elif keys:
+            params: dict = {}
+            if keys:
                 params["keys"] = keys.split(",")
-            else:
-                click.echo("Error: Must provide either --jql or --keys")
-                return
 
             click.echo("Ingesting Jira issues...")
             result = await orchestrator.execute_task(TaskType.INGEST_JIRA, params)
-            click.echo(f"Ingested {result['ticket_count']} tickets")
+
+            if "issue_count" in result:
+                click.echo(f"Ingested {result['issue_count']} issues")
+            else:
+                click.echo(
+                    f"Ingested: {result.get('issues', 0)} issues, "
+                    f"{result.get('projects', 0)} projects, "
+                    f"{result.get('issue_types', 0)} issue types, "
+                    f"{result.get('links', 0)} links"
+                )
         finally:
             db.close()
 
